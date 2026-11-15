@@ -1,0 +1,85 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Add Android project
+        run: |
+          if [ ! -d android ]; then npx cap add android; fi
+
+      - name: Generate app icons (optional)
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq librsvg2-bin
+          mkdir -p assets
+          rsvg-convert -w 1024 -h 1024 public/icon.svg -o assets/icon-only.png
+          cp assets/icon-only.png assets/icon-foreground.png
+          npx capacitor-assets generate --android --iconBackgroundColor '#020617' --iconBackgroundColorDark '#020617'
+
+      - name: Sync web build into Android
+        run: npx cap sync android
+
+      # keep the same signing key between builds so new APKs install over old ones
+      - name: Restore signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v1
+
+      - name: Use committed keystore if present
+        run: |
+          if [ -f keystore/debug.keystore ]; then
+            mkdir -p ~/.android && cp keystore/debug.keystore ~/.android/debug.keystore
+          fi
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk ConfigTester.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ConfigTester-apk
+          path: ConfigTester.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" ConfigTester.apk \
+            --title "Config Tester build ${{ github.run_number }}" \
+            --notes "Debug-signed APK from commit ${{ github.sha }}" \
+            --latest
