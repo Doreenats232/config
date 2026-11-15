@@ -1,0 +1,9 @@
+{
+  "appId": "com.configtester.app",
+  "appName": "Config Tester",
+  "webDir": "dist",
+  "backgroundColor": "#020617",
+  "android": {
+    "allowMixedContent": false
+  }
+}

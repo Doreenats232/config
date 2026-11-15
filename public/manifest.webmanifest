@@ -1,0 +1,15 @@
+{
+  "name": "Config Tester – Free Internet Config Checker",
+  "short_name": "Config Tester",
+  "description": "Test free internet configuration files (.hat, .ehi, .nm, .ovpn and more) on your provider and see where they are hosted.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
