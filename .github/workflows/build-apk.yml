@@ -36,6 +36,12 @@ jobs:
         run: |
           if [ ! -d android ]; then npx cap add android; fi
 
+      - name: Add native plugins
+        run: |
+          D=android/app/src/main/java/com/configtester/app
+          mkdir -p "$D"
+          cp native/android/*.java "$D/"
+
       - name: Generate app icons (optional)
         continue-on-error: true
         run: |

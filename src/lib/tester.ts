@@ -1,4 +1,6 @@
 import type { ParsedConfig, ParsedEndpoint } from './parser';
+import { isNative } from './native';
+import { NetProbe } from './netprobe';
 
 export interface NetworkInfo {
   ip: string;
@@ -162,7 +164,44 @@ async function probe(target: string, port: number, timeoutMs = 5500): Promise<Pr
   }
 }
 
+let onlineCache: { at: number; ok: boolean } | null = null;
+async function phoneOnline(): Promise<boolean> {
+  if (onlineCache && Date.now() - onlineCache.at < 15000) return onlineCache.ok;
+  let ok = false;
+  try {
+    ok = (await NetProbe.connect({ host: '1.1.1.1', port: 443, timeout: 4000 })).outcome === 'open';
+  } catch {
+    ok = true; // cannot tell: don't blame the network
+  }
+  onlineCache = { at: Date.now(), ok };
+  return ok;
+}
+
+async function testEndpointNative(ep: ParsedEndpoint): Promise<EndpointResult> {
+  const base = { host: ep.host, port: ep.port, kind: ep.kind };
+  const r = await NetProbe.connect({ host: ep.host, port: ep.port, timeout: 6000 });
+  const geo = r.ip ? await geoLookup(r.ip) : undefined;
+  if (r.outcome === 'open') {
+    return { ...base, ip: r.ip, dnsMs: r.dnsMs, geo, latency: r.ms, status: 'working', detail: `Port ${ep.port} is open - connected in ${r.ms} ms` };
+  }
+  if (r.outcome === 'refused') {
+    return { ...base, ip: r.ip, dnsMs: r.dnsMs, geo, latency: r.ms, status: 'likely', detail: `Host is online but TCP port ${ep.port} refused (normal for UDP / OpenVPN, or the port is closed)` };
+  }
+  if (!(await phoneOnline())) {
+    return { ...base, ip: r.ip, geo, status: 'blocked', detail: 'Your phone has no working internet right now, so this could not be tested. Connect and test again.' };
+  }
+  if (r.outcome === 'dns') return { ...base, status: 'dead', detail: 'Domain does not resolve (DNS failed)' };
+  return { ...base, ip: r.ip, dnsMs: r.dnsMs, geo, status: 'blocked', detail: r.outcome === 'timeout' ? 'No reply - blocked on your network or the server is offline' : 'Network unreachable for this server' };
+}
+
 export async function testEndpoint(ep: ParsedEndpoint): Promise<EndpointResult> {
+  if (isNative()) {
+    try {
+      return await testEndpointNative(ep);
+    } catch {
+      /* plugin missing - fall back to the browser test below */
+    }
+  }
   const base = { host: ep.host, port: ep.port, kind: ep.kind };
   let ip = ep.isIp ? ep.host : '';
   let dnsMs: number | undefined;
@@ -206,10 +245,13 @@ export async function testConfig(cfg: ParsedConfig, net: NetworkInfo | null, onP
   await Promise.all([worker(), worker(), worker()]);
 
   results.sort((a, b) => rank[a.status] - rank[b.status] || kindRank[a.kind] - kindRank[b.kind] || (a.latency ?? 9e9) - (b.latency ?? 9e9));
-  const best = results[0];
+  // judge by the real servers / proxies; SNI and Host-header names alone can't prove a config works
+  const core = results.filter((r) => r.kind === 'server' || r.kind === 'proxy');
+  const pool = core.length ? core : results;
+  const best = pool[0];
   let verdict: Verdict = 'unreadable';
   if (results.length) {
-    verdict = best.status === 'working' ? 'working' : best.status === 'likely' ? 'likely' : 'dead';
+    verdict = best.status === 'working' ? (core.length ? 'working' : 'likely') : best.status === 'likely' ? 'likely' : 'dead';
   }
   // location: prefer the main server's country
   const loc = results.find((r) => r.kind === 'server' && r.geo) || results.find((r) => r.geo);
