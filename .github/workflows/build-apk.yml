@@ -43,7 +43,9 @@ jobs:
           mkdir -p assets
           rsvg-convert -w 1024 -h 1024 public/icon.svg -o assets/icon-only.png
           cp assets/icon-only.png assets/icon-foreground.png
-          npx capacitor-assets generate --android --iconBackgroundColor '#020617' --iconBackgroundColorDark '#020617'
+          echo '<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><rect width="1024" height="1024" fill="#020617"/></svg>' > /tmp/bg.svg
+          rsvg-convert -w 1024 -h 1024 /tmp/bg.svg -o assets/icon-background.png
+          npx capacitor-assets generate --android
 
       - name: Sync web build into Android
         run: npx cap sync android
