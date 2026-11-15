@@ -65,7 +65,16 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ../gradle.log
+
+      - name: Publish build log
+        if: failure()
+        run: |
+          mkdir -p /tmp/bl && cp gradle.log /tmp/bl/ 2>/dev/null || true
+          cd /tmp/bl && git init -q && git checkout -q -b buildlog && git add -A
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "build log"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" buildlog
 
       - name: Rename APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk ConfigTester.apk
